@@ -48,6 +48,7 @@ from src.endpoint_resolver import (
 )
 from src.auth_helpers import _auth_disabled, effective_user, owner_filter
 from src.url_safety import check_outbound_url
+from core.guard_deco import content_type, suspicious_frequency, usage_monitor
 
 logger = logging.getLogger(__name__)
 
@@ -1745,6 +1746,7 @@ def setup_model_routes(model_discovery):
         return {"hosts": [], "items": items}
 
     @router.get("/models")
+    @suspicious_frequency(0.5, 60, "log")
     def api_models(request: Request, refresh: bool = False, background: bool = False,
                    wait_refresh: bool = False):
         """Get available models — per-user (caller sees only their endpoints +
@@ -1932,6 +1934,8 @@ def setup_model_routes(model_discovery):
         return {"endpoints": results}
 
     @router.post("/probe-selected")
+    @content_type(["application/json"])
+    @usage_monitor(10, 3600, "log")
     def probe_selected(request: Request, request_body: dict = Body(...)):
         """Probe specific models for compare pre-check. Body: {models: [{endpoint_id, model}]}."""
         require_admin(request)
@@ -1977,6 +1981,7 @@ def setup_model_routes(model_discovery):
             db.close()
 
     @router.get("/probe")
+    @usage_monitor(10, 3600, "log")
     def probe_models(request: Request, endpoint_id: Optional[str] = Query(None)):
         """Probe individual models with a tiny completion request. Streams SSE results."""
         require_admin(request)
@@ -2062,6 +2067,7 @@ def setup_model_routes(model_discovery):
         return result
 
     @router.get("/discover")
+    @usage_monitor(10, 3600, "log")
     def discover_local(request: Request):
         """Scan local network for model servers on common ports."""
         require_admin(request)
@@ -2132,6 +2138,7 @@ def setup_model_routes(model_discovery):
             db.close()
 
     @router.post("/model-endpoints")
+    @usage_monitor(5, 3600, "log")
     def create_model_endpoint(
         request: Request,
         name: str = Form(""),
@@ -2399,6 +2406,7 @@ def setup_model_routes(model_discovery):
         }
 
     @router.post("/model-endpoints/test")
+    @usage_monitor(10, 3600, "log")
     def test_model_endpoint(
         request: Request,
         base_url: str = Form(...),
@@ -2445,6 +2453,7 @@ def setup_model_routes(model_discovery):
         }
 
     @router.get("/model-endpoints/{ep_id}/probe")
+    @usage_monitor(10, 3600, "log")
     def probe_endpoint_models(ep_id: str, request: Request):
         """Re-probe all models on an endpoint. Updates hidden_models and streams SSE results."""
         require_admin(request)
@@ -2550,6 +2559,7 @@ def setup_model_routes(model_discovery):
             db.close()
 
     @router.patch("/model-endpoints/{ep_id}/models")
+    @content_type(["application/json"])
     async def update_hidden_models(ep_id: str, request: Request):
         """Bulk update hidden and/or pinned model lists for an endpoint.
 
@@ -2848,6 +2858,8 @@ def setup_model_routes(model_discovery):
             db.close()
 
     @router.patch("/model-endpoints/{ep_id}")
+    @content_type(["application/json"])
+    @usage_monitor(5, 3600, "log")
     async def toggle_model_endpoint(ep_id: str, request: Request):
         require_admin(request)
         # Optional JSON body for field-targeted updates. No body → toggle is_enabled (legacy behaviour).
@@ -3033,6 +3045,7 @@ def setup_model_routes(model_discovery):
         return {"dependents": _settings_using_endpoint(ep_id)}
 
     @router.delete("/model-endpoints/{ep_id}")
+    @usage_monitor(30, 3600, "log")
     def delete_model_endpoint(ep_id: str, request: Request):
         require_admin(request)
         db = SessionLocal()
@@ -3079,6 +3092,7 @@ def setup_model_routes(model_discovery):
         disabled: list = []
 
     @router.post("/tools")
+    @content_type(["application/json"])
     def update_tools(body: ToolsUpdate, request: Request):
         """Update which tools are disabled."""
         require_admin(request)
