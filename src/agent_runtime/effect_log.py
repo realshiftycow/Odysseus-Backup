@@ -42,6 +42,11 @@ from src.agent_runtime.effects import (
 )
 from src.agent_runtime.resources import ResourceIdentityError
 
+# Windows opens descriptors in text mode by default, which rewrites LF as CRLF on
+# write and makes os.write() byte counts disagree with the on-disk offsets this log
+# relies on; O_BINARY (a no-op elsewhere) keeps the journal byte-exact.
+_O_BINARY = getattr(os, "O_BINARY", 0)
+
 
 EFFECTS_DIR = os.path.join(DATA_DIR, "effects")
 _RUN_ID = re.compile(r"[a-f0-9]{32}")
@@ -243,7 +248,7 @@ class EffectLog:
         """Hold the file exclusively with every durable record merged."""
         assert self.path is not None
         _ensure_directory(self.path.parent)
-        flags = os.O_RDWR | os.O_APPEND | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+        flags = os.O_RDWR | os.O_APPEND | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0) | _O_BINARY
         descriptor = os.open(self.path, flags, 0o600)
         try:
             if fcntl is not None:
@@ -358,7 +363,7 @@ class EffectLog:
         with self._lock:
             try:
                 descriptor = os.open(self.path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
-                                     | getattr(os, "O_CLOEXEC", 0))
+                                     | getattr(os, "O_CLOEXEC", 0) | _O_BINARY)
             except FileNotFoundError:
                 return
             except OSError:
@@ -394,7 +399,7 @@ class EffectLog:
         log = cls(run_id, directory=directory)
         assert log.path is not None
         try:
-            descriptor = os.open(log.path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0))
+            descriptor = os.open(log.path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0) | _O_BINARY)
         except FileNotFoundError:
             return log
         except OSError as error:
@@ -460,7 +465,7 @@ class EffectLog:
         temporary = target.with_suffix(".tmp")
         data = json.dumps({"run_id": self.run_id, "effect_id": effect_id}, sort_keys=True).encode()
         _ensure_directory(target.parent)
-        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0) | _O_BINARY
         descriptor = os.open(temporary, flags, 0o600)
         try:
             view = memoryview(data)
@@ -478,7 +483,7 @@ class EffectLog:
             return None
         base = Path(directory) if directory is not None else effects_dir()
         try:
-            descriptor = os.open(base / f"launch-{generation}.json", os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+            descriptor = os.open(base / f"launch-{generation}.json", os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | _O_BINARY)
             with os.fdopen(descriptor, "rb") as stream:
                 if os.fstat(stream.fileno()).st_nlink != 1:
                     return None
