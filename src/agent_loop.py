@@ -5310,7 +5310,7 @@ def _calendar_list_summary_from_tool_output(
             return raw_when
 
         def time_label(dt: datetime) -> str:
-            return dt.strftime("%-I:%M %p")
+            return _format_clock_time(dt)
 
         start_date = f"{start.strftime('%b')} {start.day}"
         if start.date() == end.date():
@@ -6334,17 +6334,23 @@ def _has_successful_calendar_tool_evidence(tool_events: list[dict[str, Any]]) ->
     return False
 
 
+def _format_clock_time(dt: datetime) -> str:
+    # 12-hour clock without a leading zero. "%-I" / "%-d" are glibc extensions;
+    # Windows strftime raises ValueError("Invalid format string") on them.
+    return f"{dt.hour % 12 or 12}:{dt.strftime('%M %p')}"
+
+
 def _friendly_email_date(value: str) -> str:
     text = str(value or "").strip()
     if not text:
         return ""
     try:
         parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
-        return parsed.strftime("%b %-d, %-I:%M %p")
+        return f"{parsed.strftime('%b')} {parsed.day}, {_format_clock_time(parsed)}"
     except Exception:
         try:
             parsed = datetime.fromisoformat(text[:19])
-            return parsed.strftime("%b %-d, %-I:%M %p")
+            return f"{parsed.strftime('%b')} {parsed.day}, {_format_clock_time(parsed)}"
         except Exception:
             return text
 
